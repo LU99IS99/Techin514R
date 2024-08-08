@@ -3,45 +3,41 @@
 
 // ADC Data
 int ADC_value = 0;
-
-// Kalman filter variables
-double Q = 0.1;   // Process noise covariance
-double R = 5;     // Measurement noise covariance
-double P = 1;     // Error covariance
-double K = 0;     // Kalman gain
-double X = 0;     // Estimated value
+const int numSamples = 10;  // Number of samples for moving average
+int samples[numSamples];
+int sampleIndex = 0;
+float sum = 0;  // Sum of the samples for calculating the moving average
+float filteredValue = 0;
 
 const char* host = "192.168.4.1";    // The server URL /IP is about to be connected
 const int httpPort = 80;               // About to connect to the server port
 
 ESP8266WiFiMulti wifiMulti;     // Create an ESP8266WiFiMulti object with the name 'wifiMulti'
 
-// Kalman filter function
-double kalmanFilter(double measurement) {
-  // Prediction update
-  P = P + Q;
-  
-  // Measurement update
-  K = P / (P + R);
-  X = X + K * (measurement - X);
-  P = (1 - K) * P;
-  
-  return X;
-}
-
 void wifiClientRequest(){
   WiFiClient client;  
  
   // Read the simulated input values:
   ADC_value = analogRead(A0);
-  Serial.printf("A:%d\n",ADC_value);
 
-  // Apply Kalman filter to ADC value
-  double filtered_ADC_value = kalmanFilter(ADC_value);
+  // Update the moving average
+  sum -= samples[sampleIndex];  // Remove the oldest sample from the sum
+  samples[sampleIndex] = ADC_value;  // Add the new sample to the array
+  sum += ADC_value;  // Add the new sample to the sum
 
-  Serial.printf("B:%d\n",(int)filtered_ADC_value);
+  sampleIndex = (sampleIndex + 1) % numSamples;  // Move to the next sample index
+  
+  // Calculate the average
+  filteredValue = sum / numSamples;
+
+  // Print the raw ADC value and the filtered value to the Serial Monitor
+  Serial.print("Raw Data Value A: ");
+  Serial.println(ADC_value);
+  Serial.print("Filtered Value B: ");
+  Serial.println(filteredValue);
+
   // Put the data information that needs to be sent into the client request
-  String url = "/sendData?data=" + String(filtered_ADC_value);
+  String url = "/sendData?data=" + String(filteredValue);
          
   // Creates a string to use in HTTP requests
   String httpRequest =  String("GET ") + url + " HTTP/1.1\r\n" +
@@ -52,13 +48,13 @@ void wifiClientRequest(){
   Serial.print("Connecting to "); 
   Serial.print(host); 
   
-  if (client.connect(host, httpPort)) {  // If the connection fails, the serial output informs the user and then returns to the loop
+  if (client.connect(host, httpPort)) {  //If the connection fails, the serial output informs the user and then returns to the loop
     Serial.println(" Success");
     
     client.print(httpRequest);          // Sends an HTTP request to the server
     Serial.println("Sending request: ");// Output HTTP request information content through the serial port for reference
     Serial.println(httpRequest);        
-  } else {
+  } else{
     Serial.println(" failed");
   }
   
@@ -82,6 +78,10 @@ void setup() {
   Serial.print("IP address:\t");
   Serial.println(WiFi.localIP());           // Output the IP of ESP8266-NodeMCU through the serial port monitor
 
+  // Initialize samples array and sum
+  for (int i = 0; i < numSamples; i++) {
+    samples[i] = 0;
+  }
 }
 
 void loop() {
